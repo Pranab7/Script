@@ -1,0 +1,61 @@
+function logSuspendedUsers() {
+  try {
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Suspended"); // Get the "Suspended" sheet
+
+    // Check if the sheet exists
+    if (!sheet) {
+      Logger.log("Sheet 'Suspended' does not exist.");
+      return;
+    }
+
+    // Check if the sheet is empty to add headers
+    if (sheet.getLastRow() === 0) {
+      sheet.appendRow(['Email Address [Required]', 'Org Unit Path [Required]', 'Employee ID', 'INFORMATION GIVEN BY', 'Date', 'Status']); // Add headers
+    }
+
+    const existingData = sheet.getDataRange().getValues(); // Get existing data
+    const existingEmails = new Set(existingData.map(row => row[0])); // Set of existing emails (column 1)
+
+    let pageToken;
+
+    do {
+      const response = AdminDirectory.Users.list({
+        customer: 'my_customer',
+        maxResults: 500,
+        orderBy: 'email',
+        pageToken: pageToken
+      });
+
+      if (response.users && response.users.length > 0) {
+        response.users.forEach(user => {
+          if (user.suspended) {
+            // Append only if the user is not already listed
+            if (!existingEmails.has(user.primaryEmail)) {
+              const orgUnitPath = user.orgUnitPath || "N/A"; // Get Org Unit Path
+
+              // Get Employee ID from externalIds
+              const employeeId = user.externalIds && user.externalIds.length > 0
+                ? user.externalIds[0].value // Assuming you want the first external ID
+                : "N/A"; // Default value if not found
+
+              const infoGivenBy = "Admin"; // Replace with actual information source if available
+              
+              // Append new suspended user data
+              sheet.appendRow([user.primaryEmail, orgUnitPath, employeeId, infoGivenBy, new Date(), "Suspended"]);
+            } else {
+              Logger.log(`User ${user.primaryEmail} already exists in the sheet.`);
+            }
+          }
+        });
+      } else {
+        Logger.log("No suspended users found.");
+      }
+
+      // Get the next page token
+      pageToken = response.nextPageToken;
+    } while (pageToken);
+
+  } catch (error) {
+    Logger.log("Error fetching users: " + error.message);
+  }
+}
